@@ -152,24 +152,41 @@ echo -e "====success\t\t:setting ryncd===="
 #sudoers
 echo "====START :setting sudo====" >> $LOG_FILE 2>&1
 
-#mv /etc/sudoers ${BACKUP_DIR}/sudoers.${BACKUP_DATE}
-#if [ $? -ne 0 ]; then
-#        echo "Error: backup failed /etc/sudoers"
-#        echo "Error: backup failed /etc/sudoers" >> $LOG_FILE 2>&1
-#        exit 1
-#fi
-#cp -f ${SOFTWARE_DIR}/sudoers /etc/sudoers
-#if [ $? -ne 0 ]; then
-#    echo "Error: file copy failed /etc/sudoers"
-#    mv ${BACKUP_DIR}/sudoers.${BACKUP_DATE} /etc/sudoers
-#    exit 1
-#else
-#    chmod 440 /etc/sudoers
-##fi
-#
-#echo "====END :setting sudo====" >> $LOG_FILE 2>&1
-    cp -f ${SOFTWARE_DIR}/sudoers.pcc /etc/sudoers/sudoers.d
-    chmod 440 /etc/sudoers/sudoers.d/sudoers.pcc
+
+grep -Fq "#includedir /etc/sudoers.d" /etc/sudoers
+if [ $? -ne 0 ]; then
+    cp /etc/sudoers ${BACKUP_DIR}/sudoers.${BACKUP_DATE}
+    if [ $? -ne 0 ]; then
+        echo "Error: backup failed /etc/sudoers"
+        echo "Error: backup failed /etc/sudoers" >> $LOG_FILE 2>&1
+        exit 1
+    fi
+    echo "#includedir /etc/sudoers.d" >> /etc/sudoers
+    if [ $? -ne 0 ]; then
+        echo "Error: add to /etc/sudoers failed"
+        echo "Error: add to /etc/sudoers failed" >> $LOG_FILE 2>&1
+        exit 1
+    fi
+fi
+if ! [ -e /etc/sudoers.d ]; then
+    mkdir /etc/sudoers.d
+    if [ $? -ne 0 ]; then
+        echo "Error: make dir failed /etc/sudoers.d"
+        echo "Error: make dir failed /etc/sudoers.d" >> $LOG_FILE 2>&1
+        exit 1
+    fi
+fi
+if ! [ -e /etc/sudoers.d/pcc ]; then
+    cp -f ${SOFTWARE_DIR}/sudoers_pcc /etc/sudoers.d/pcc
+    if [ $? -ne 0 ]; then
+        echo "Error: copy failed /etc/sudoers.d/sudoers_pcc"
+        echo "Error: copy failed /etc/sudoers.d/sudoers_pcc" >> $LOG_FILE 2>&1
+        exit 1
+    fi
+    chmod 440 /etc/sudoers.d/pcc
+fi
+echo "====END :setting sudo====" >> $LOG_FILE 2>&1
+
 echo -e "====success\t\t:setting sudo===="
 
 #tomcat6 user make
@@ -212,10 +229,20 @@ echo "==== START :install puppet module" >> $LOG_FILE 2>&1
 
 #install customized puppetlabs-lvm from github
 yum -y install git >> $LOG_FILE 2>&1
-git clone https://github.com/scsk-oss/puppetlabs-lvm.git >> $LOG_FILE 2>&1
+cd /etc/puppet/modules
+git clone --branch "patch_v0.1.0" https://github.com/primecloud-controller-org/puppetlabs-lvm.git >> $LOG_FILE 2>&1
+if [ $? -ne 0 ]; then
+    echo "Error: LVM puppet module clone failed."
+    echo "Error: LVM puppet module clone failed." >> $LOG_FILE 2>&1
+    exit 1
+fi
 
-mkdir /etc/puppet/modules/lvm
-cp -r puppetlabs-lvm/* /etc/puppet/modules/lvm/
+mv /etc/puppet/modules/puppetlabs-lvm /etc/puppet/modules/lvm >> $LOG_FILE 2>&1
+if [ $? -ne 0 ]; then
+    echo "Error: rename dir /etc/puppet/modules/lvm"
+    echo "Error: rename dir /etc/puppet/modules/lvm" >> $LOG_FILE 2>&1
+    exit 1
+fi
 
 
 echo "==== END :install puppet module"
@@ -554,10 +581,22 @@ fi
 cp -p ${SOFTWARE_DIR}/python/python-${PYTHON_VERSION}.conf /etc/ld.so.conf.d/python-${PYTHON_VERSION}.conf
 ldconfig
 
-#install ez_setup
-#python ${SOFTWARE_DIR}/python/ez_setup.py >> $LOG_FILE 2>&1
-wget http://peak.telecommunity.com/dist/ez_setup.py >> $LOG_FILE 2>&1
-python ez_setup.py >> $LOG_FILE 2>&1
+#install ez_setup and pip
+which pip > /dev/null
+if [ $? -ne 0 ]; then
+    wget https://bootstrap.pypa.io/ez_setup.py -O - | python >> $LOG_FILE 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Error: python ez_setup install failed." >> $LOG_FILE 2>&1
+        echo "Error: python ez_setup install failed."
+        exit 1
+    fi
+    easy_install pip >> $LOG_FILE 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Error: python pip install failed." >> $LOG_FILE 2>&1
+        echo "Error: python pip install failed."
+        exit 1
+    fi
+fi
 
 #install SQLAlchemy
 easy_install SQLAlchemy\=\=${SQLALCHEMY_VERSION} >> $LOG_FILE 2&>1
@@ -577,6 +616,41 @@ easy_install apache-libcloud\=\=${LIBCLOUD_VERSION} >> $LOG_FILE 2&>1
 wget https://launchpad.net/myconnpy/0.3/0.3.2/+download/mysql-connector-python-0.3.2-devel.tar.gz
 easy_install -Z mysql-connector-python-0.3.2-devel.tar.gz >> $LOG_FILE 2>&1
 #easy_install mysql-connector-python\=\=${MYSQL_CONNECTOR_PYTHON_VERSION} >> $LOG_FILE 2&>1
+
+#install pycrypto
+pip install pycrypto==2.6.1 >> $LOG_FILE 2>&1
+if [ $? -ne 0 ]; then
+    echo "Error: python pycrypto install failed." >> $LOG_FILE 2>&1
+    echo "Error: python pycrypto install failed."
+    exit 1
+fi
+
+#install OpenStack liblary
+pip install python-cinderclient==1.0.8 python-novaclient==2.15.0 >> $LOG_FILE 2>&1
+if [ $? -ne 0 ]; then
+    echo "Error: python cinderclient/novaclient install failed." >> $LOG_FILE 2>&1
+    echo "Error: python cinderclient/novaclient install failed."
+    exit 1
+fi
+
+#install Azure SDK
+cd /tmp
+if [ -e /tmp/azure-sdk-for-python ]; then
+    mv -f /tmp/azure-sdk-for-python /tmp/azure-sdk-for-python.bak
+fi
+git clone --branch "patch_0.8.1" https://github.com/primecloud-controller-org/azure-sdk-for-python.git >> $LOG_FILE 2>&1
+if [ $? -ne 0 ]; then
+    echo "Error: Azure SDK clone failed." >> $LOG_FILE 2>&1
+    echo "Error: Azure SDK clone failed."
+    exit 1
+fi
+cd /tmp/azure-sdk-for-python
+python setup.py install >> $LOG_FILE 2>&1
+if [ $? -ne 0 ]; then
+    echo "Error: python Azure SDK install failed." >> $LOG_FILE 2>&1
+    echo "Error: python Azure SDK install failed."
+    exit 1
+fi
 
 #sitecustomize.py(utf8)
 if [ -e /usr/local/lib/python2.7/site-packages/sitecustomize.py ]; then
@@ -681,6 +755,7 @@ chown tomcat:tomcat /opt/adc/log/iaasgw/app.log
 
 #create adc tables;
 cd ${BASE_DIR}
+chmod +x ${BASE_DIR}/createTables.sh
 ${BASE_DIR}/createTables.sh
 
 if [ $? -eq 0 ]; then
@@ -708,10 +783,25 @@ echo "====END :set mysql root password====" >> $LOG_FILE 2>&1
 
 
 #insert Sample Image Data
+chmod +x ${BASE_DIR}/insertSampledata.sh
 ${BASE_DIR}/insertSampledata.sh
 if [ $? -eq 0 ]; then
     echo "success: insert default sample data"  >> $LOG_FILE 2>&1
     echo -e "====success\t\t: insert default sample data"
+fi
+
+#install Niftyimage files
+if ! [ -e ${BASE_DIR}/createNiftyFiles.sh ]; then
+    echo "Error: createNiftyFiles.sh not exist.."
+    echo "Error: createNiftyFiles.sh not exist."  >> $LOG_FILE 2>&1
+    exit 1
+fi
+chmod +x ${BASE_DIR}/createNiftyFiles.sh
+${BASE_DIR}/createNiftyFiles.sh
+if [ $? -ne 0 ]; then
+    echo "Error: failed nifty image files copy."
+    echo "Error: failed nifty image files copy."  >> $LOG_FILE 2>&1
+    exit 1
 fi
 
 #
