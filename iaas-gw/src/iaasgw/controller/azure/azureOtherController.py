@@ -51,7 +51,7 @@ class azureOtherController(object):
             status = self.client.createCloudService(cloudService, affinityGroup)
             self.logger.info('      Cloud Service: %s, Status: %s' % (cloudService, status))
         else:
-            # ステータスが作成完了以外の場合の処理は要検討
+            # XXX: ステータスが作成完了以外の場合の処理は要検討
             pass
 
     def createStorageAccountFor(self, platformNo):
@@ -60,7 +60,7 @@ class azureOtherController(object):
             (platformTable.c.PLATFORM_NO==platformNo))
 
         # ストレージアカウントの存在確認
-        # 名前が要件を満たしているか確認必要
+        # XXX: 名前が要件を満たしているか確認必要
         # Storage account names must be between 3 and 24 characters in length and use numbers and lower-case letters only.
         storageAccount = platformInfo['STORAGE_ACCOUNT_NAME']
         self._verifyStorageAccountName(storageAccount)
@@ -74,8 +74,9 @@ class azureOtherController(object):
             status = self.client.createStorageAccount(storageAccount, affinityGroup)
             self.logger.info('      Storage Account: %s, Status: %s' % (storageAccount, status))
         else:
-            # ステータスが作成完了以外の場合の処理は要検討
+            # XXX: ステータスが作成完了以外の場合の処理は要検討
             pass
 
     def _verifyStorageAccountName(self, storageAccount):
+        # XXX:
         pass
